@@ -326,9 +326,10 @@ std::tuple<ImageId, int, int> TextureCache::ResolveOverlap(const ImageInfo& imag
             return {ExpandImage(image_info, cache_image_id), -1, -1};
         }
 
-        // Size is greater but resources are not, because the tiling mode is different.
-        // Likely the address is reused for a image with a different tiling mode.
-        if (image_info.tile_mode != cache_image.info.tile_mode) {
+        // Size is greater but resources are not, because the tiling layout is different.
+        // Likely the address is reused for an image with a different tile interpretation.
+        if (image_info.tile_mode != cache_image.info.tile_mode ||
+            image_info.alt_tile != cache_image.info.alt_tile) {
             if (safe_to_delete) {
                 FreeImage(cache_image_id);
             }

@@ -335,6 +335,29 @@ std::tuple<ImageId, int, int> TextureCache::ResolveOverlap(const ImageInfo& imag
             return {merged_image_id, -1, -1};
         }
 
+        // NHL 21/22 diagnostic workaround: the game describes the same HDR storage image
+        // as an 11-mip unpadded image and then a larger 2-mip pow2-padded image.
+        // The latter cannot be a view of the former, and copying 11 mips into a
+        // 2-mip Vulkan image is invalid. Evict the old representation so FindImage
+        // can create the requested one. This may lose GPU-only contents; the log
+        // identifies whether the game gets past this particular alias.
+        if (binding == BindingType::Storage &&
+            image_info.pixel_format == vk::Format::eB10G11R11UfloatPack32 &&
+            image_info.pixel_format == cache_image.info.pixel_format &&
+            image_info.type == cache_image.info.type &&
+            image_info.size == cache_image.info.size && image_info.size.width == 1920 &&
+            image_info.size.height == 1080 && image_info.pitch == cache_image.info.pitch &&
+            image_info.tile_mode == cache_image.info.tile_mode &&
+            cache_image.info.resources.levels == 11 && image_info.resources.levels == 2 &&
+            !cache_image.info.props.is_pow2 && image_info.props.is_pow2 &&
+            cache_image.info.guest_size == 0x1000000 && image_info.guest_size == 0x1400000) {
+            LOG_WARNING(Render_Vulkan,
+                        "NHL Test 2: evicting HDR storage alias at {:#x} (11 -> 2 mips)",
+                        image_info.guest_address);
+            FreeImage(cache_image_id);
+            return {merged_image_id, -1, -1};
+        }
+
         // Enhanced debug logging for unreachable case
         // Calculate expected size based on format and dimensions
         u64 expected_size =

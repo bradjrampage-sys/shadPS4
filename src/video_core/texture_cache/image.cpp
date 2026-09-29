@@ -386,8 +386,27 @@ void Image::Upload(std::span<const vk::BufferImageCopy> upload_copies, vk::Buffe
         .imageMemoryBarrierCount = static_cast<u32>(image_barriers.size()),
         .pImageMemoryBarriers = image_barriers.data(),
     });
-    cmdbuf.copyBufferToImage(buffer, GetImage(), vk::ImageLayout::eTransferDstOptimal,
-                             upload_copies);
+
+    // Frostbite safety: reject Vulkan buffer-image copies with an illegal row/image layout.
+    // Battlefield 4 was observed generating regions that fit the image but still faulted the
+    // device because bufferRowLength/bufferImageHeight were smaller than the copied extent.
+    boost::container::small_vector<vk::BufferImageCopy, 8> safe_copies;
+    safe_copies.reserve(upload_copies.size());
+    for (const auto& copy : upload_copies) {
+        if ((copy.bufferRowLength != 0 && copy.bufferRowLength < copy.imageExtent.width) ||
+            (copy.bufferImageHeight != 0 && copy.bufferImageHeight < copy.imageExtent.height)) {
+            LOG_WARNING(Render_Vulkan,
+                        "Skipping invalid image upload layout row={} height={} extent={}x{}",
+                        copy.bufferRowLength, copy.bufferImageHeight, copy.imageExtent.width,
+                        copy.imageExtent.height);
+            continue;
+        }
+        safe_copies.push_back(copy);
+    }
+    if (!safe_copies.empty()) {
+        cmdbuf.copyBufferToImage(buffer, GetImage(), vk::ImageLayout::eTransferDstOptimal,
+                                 safe_copies);
+    }
     cmdbuf.pipelineBarrier2(vk::DependencyInfo{
         .dependencyFlags = vk::DependencyFlagBits::eByRegion,
         .bufferMemoryBarrierCount = 1,

@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <atomic>
+#include <cstdlib>
+#include <cstring>
 #include <boost/preprocessor/stringize.hpp>
 
 #include "common/assert.h"
@@ -652,9 +654,12 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                     if (event->event_type.Value() == EventType::PixelPipeStatDump) {
                         static constexpr u64 OcclusionCounterValidMask = 0x8000000000000000ULL;
                         static constexpr u64 OcclusionCounterStep = 0x2FFFFFFULL;
+                        static const char* occlusion_mode = std::getenv("SHADPS4_NHL22_OCCLUSION");
+                        const bool zero_samples =
+                            occlusion_mode && std::strcmp(occlusion_mode, "zero") == 0;
                         u64* results = event->Address<u64*>();
                         for (s32 i = 0; i < num_counter_pairs; ++i, results += 2) {
-                            *results = pixel_counter | OcclusionCounterValidMask;
+                            *results = (zero_samples ? 0 : pixel_counter) | OcclusionCounterValidMask;
                         }
                         pixel_counter += OcclusionCounterStep;
                     }

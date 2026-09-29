@@ -1009,15 +1009,15 @@ s32 PS4_SYSV_ABI sceNpUnregisterStateCallback() {
 s32 PS4_SYSV_ABI sceNpRegisterStateCallbackA(OrbisNpStateCallbackA callback, void* userdata) {
     LOG_INFO(Lib_NpManager, "called, userdata = {}", userdata);
     const s32 result = RegisterStateCallbackA(callback, userdata);
-    // Probe whether NHL's front end waits for an initial offline state edge after
-    // registering late, when the user-service login event has already been consumed.
-    if (result > 0 && std::getenv("SHADPS4_NHL22_INITIAL_NP_STATE") != nullptr &&
-        Common::ElfInfo::Instance().GameSerial() == "CUSA26280") {
+    // NHL 22 registers this callback after the login event has already been consumed.
+    // Give Frostbite the initial offline state edge immediately so the bootflow cannot
+    // wait forever for an event that pre-dated its registration.
+    if (result > 0 && Common::ElfInfo::Instance().GameSerial() == "CUSA26280") {
         s32 user_id{};
         if (Libraries::UserService::sceUserServiceGetInitialUser(&user_id) == ORBIS_OK) {
-            LOG_INFO(Lib_NpManager, "NHL22 probe: queue initial signed-out state for user {}",
-                     user_id);
+            LOG_INFO(Lib_NpManager, "NHL22: dispatch initial signed-out state for user {}", user_id);
             QueueNpStateEvent(user_id, OrbisNpState::SignedOut);
+            DispatchPendingNpStateCallbacks();
         }
     }
     return result;

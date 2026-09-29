@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <cstdlib>
+
 #include "common/debug.h"
 #include "core/debug_state.h"
 #include "core/emulator_settings.h"
@@ -47,6 +49,7 @@ Rasterizer::Rasterizer(const Instance& instance_, Scheduler& scheduler_, Runtime
     memory->SetRasterizer(this);
 
     scheduler.SetSessionCallback([this] { buffer_cache.FlushSyncBatch(true); });
+    scheduler.SetPreSubmitCallback([this] { CloseOcclusionQuery(); });
 
     scheduler.SetSubmitCallback([this](Vulkan::SubmitInfo& info) {
         runtime.FlushBarriers();
@@ -310,6 +313,99 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
     }
 
     ResetBindings(false);
+}
+
+
+static constexpr u32 NhlOcclusionSlots = 64;
+static constexpr u64 NhlOcclusionValidMask = 0x8000000000000000ULL;
+static constexpr u64 NhlOcclusionAssumeVisible = 0x2FFFFFFULL;
+
+void Rasterizer::CloseOcclusionQuery() {
+    if (!occlusion_active || !occlusion_pool) {
+        return;
+    }
+    scheduler.CommandBuffer().endQuery(*occlusion_pool, occlusion_slot);
+    occlusion_active = false;
+    occlusion_aborted = true;
+}
+
+bool Rasterizer::OcclusionQueryDump(u64* results, s32 num_pairs) {
+    if (results == nullptr || num_pairs <= 0) {
+        return false;
+    }
+    if (occlusion_aborted) {
+        occlusion_aborted = false;
+        return false;
+    }
+    if (!occlusion_pool) {
+        const vk::QueryPoolCreateInfo info{
+            .queryType = vk::QueryType::eOcclusion,
+            .queryCount = NhlOcclusionSlots,
+        };
+        auto [result, pool] = instance.GetDevice().createQueryPoolUnique(info);
+        if (result != vk::Result::eSuccess) {
+            return false;
+        }
+        occlusion_pool = std::move(pool);
+    }
+
+    if (!occlusion_active) {
+        scheduler.EndRendering();
+    }
+    const auto cmdbuf = scheduler.CommandBuffer();
+
+    if (!occlusion_active) {
+        cmdbuf.resetQueryPool(*occlusion_pool, occlusion_slot, 1);
+        cmdbuf.beginQuery(*occlusion_pool, occlusion_slot, vk::QueryControlFlags{});
+        occlusion_active = true;
+        occlusion_cmdbuf = cmdbuf;
+        occlusion_pending_addr = reinterpret_cast<VAddr>(results);
+        for (s32 i = 0; i < num_pairs; ++i) {
+            results[i * 2] = NhlOcclusionValidMask;
+        }
+        return true;
+    }
+
+    if (cmdbuf != occlusion_cmdbuf) {
+        occlusion_active = false;
+        occlusion_pending_addr = 0;
+        return false;
+    }
+
+    cmdbuf.endQuery(*occlusion_pool, occlusion_slot);
+    occlusion_active = false;
+    for (s32 i = 0; i < num_pairs; ++i) {
+        results[i * 2] = NhlOcclusionValidMask;
+    }
+
+    const VAddr subject = occlusion_pending_addr != 0
+                              ? occlusion_pending_addr
+                              : reinterpret_cast<VAddr>(results);
+    u64 answer = NhlOcclusionAssumeVisible;
+    if (const auto it = occlusion_history.find(subject); it != occlusion_history.end()) {
+        answer = it->second;
+    }
+
+    if (occlusion_prev_valid) {
+        u64 previous = 0;
+        if (instance.GetDevice().getQueryPoolResults(
+                *occlusion_pool, occlusion_prev_slot, 1, sizeof(previous), &previous,
+                sizeof(previous), vk::QueryResultFlagBits::e64) == vk::Result::eSuccess) {
+            const VAddr previous_subject = occlusion_subjects[occlusion_prev_slot];
+            if (previous_subject != 0) {
+                occlusion_history[previous_subject] = previous;
+            }
+        }
+    }
+
+    occlusion_subjects[occlusion_slot] = subject;
+    occlusion_prev_slot = occlusion_slot;
+    occlusion_prev_valid = true;
+    occlusion_slot = (occlusion_slot + 1) % NhlOcclusionSlots;
+    occlusion_pending_addr = 0;
+
+    results[0] = answer | NhlOcclusionValidMask;
+    return true;
 }
 
 void Rasterizer::DispatchDirect() {

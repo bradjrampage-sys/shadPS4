@@ -1,6 +1,9 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <atomic>
+#include <bit>
+
 #include "common/debug.h"
 #include "core/debug_state.h"
 #include "core/emulator_settings.h"
@@ -21,6 +24,14 @@
 #endif
 
 namespace Vulkan {
+
+namespace {
+std::atomic<u64> g_unexpected_meta_texture_reads{0};
+
+bool ShouldLogMetaRead(const u64 count) {
+    return count == 1 || (count >= 8 && std::has_single_bit(count));
+}
+} // namespace
 
 static Shader::PushData MakeUserData(const AmdGpu::Regs& regs) {
     // TODO(roamic): Add support for multiple viewports and geometry shaders when ViewportIndex
@@ -730,7 +741,12 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
     for (const auto& image_desc : stage.images) {
         const auto tsharp = image_desc.GetSharp(stage);
         if (texture_cache.IsMeta(tsharp.Address())) {
-            LOG_WARNING(Render_Vulkan, "Unexpected metadata read by a shader (texture)");
+            const u64 count =
+                g_unexpected_meta_texture_reads.fetch_add(1, std::memory_order_relaxed) + 1;
+            if (ShouldLogMetaRead(count)) {
+                LOG_WARNING(Render_Vulkan,
+                            "Unexpected metadata read by a shader (texture), count={}", count);
+            }
         }
 
         const auto data_fmt = tsharp.GetDataFmt();

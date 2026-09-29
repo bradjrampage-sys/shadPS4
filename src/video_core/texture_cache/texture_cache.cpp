@@ -298,17 +298,37 @@ std::tuple<ImageId, int, int> TextureCache::ResolveOverlap(const ImageInfo& imag
             return {ExpandImage(image_info, cache_image_id), -1, -1};
         }
 
-        const bool pow2_padding_only =
-            image_info.props.is_pow2 != cache_image.info.props.is_pow2 &&
+        const bool compatible_base_level_alias =
             image_info.tile_mode == cache_image.info.tile_mode &&
-            image_info.size == cache_image.info.size &&
-            image_info.pitch == cache_image.info.pitch && image_info.resources.levels == 1 &&
-            cache_image.info.resources.levels == 1 && image_info.resources.layers == 1 &&
-            cache_image.info.resources.layers == 1;
+            image_info.alt_tile == cache_image.info.alt_tile &&
+            image_info.size == cache_image.info.size && image_info.pitch == cache_image.info.pitch &&
+            image_info.type == cache_image.info.type && lhs_block_size == rhs_block_size &&
+            image_info.resources.levels == 1 && image_info.resources.layers == 1 &&
+            cache_image.info.resources.levels >= 1 && cache_image.info.resources.layers >= 1 &&
+            IsVulkanFormatCompatible(cache_image.info.pixel_format, image_info.pixel_format);
+
+        // Frostbite frequently aliases a render target over mipmapped storage at the same guest
+        // address. The base level is identical even when the descriptor toggles pow2 padding or
+        // reports a larger one-level allocation. Reuse the cached image and let the requested view
+        // select mip 0 rather than treating the resource-description mismatch as impossible.
+        if (compatible_base_level_alias &&
+            (image_info.props.is_pow2 != cache_image.info.props.is_pow2 ||
+             image_info.resources != cache_image.info.resources ||
+             image_info.guest_size != cache_image.info.guest_size)) {
+            LOG_WARNING(Render_Vulkan,
+                        "Project X/Frostbite: accepting base-level image alias at {:#x}: "
+                        "cached levels={} size={:#x} pow2={}, requested levels={} size={:#x} "
+                        "pow2={}",
+                        image_info.guest_address, cache_image.info.resources.levels,
+                        cache_image.info.guest_size, cache_image.info.props.is_pow2,
+                        image_info.resources.levels, image_info.guest_size,
+                        image_info.props.is_pow2);
+            return {cache_image_id, 0, 0};
+        }
 
         // Size and resources are less than or equal, use image view.
         if (image_info.pixel_format != cache_image.info.pixel_format ||
-            image_info.guest_size <= cache_image.info.guest_size || pow2_padding_only) {
+            image_info.guest_size <= cache_image.info.guest_size) {
             auto result_id = merged_image_id ? merged_image_id : cache_image_id;
             const auto& result_image = slot_images[result_id];
             const bool is_compatible =
@@ -448,7 +468,23 @@ std::tuple<ImageId, int, int> TextureCache::ResolveOverlap(const ImageInfo& imag
                   merged_image_id.index, static_cast<int>(binding), scheduler.CurrentTick(),
                   scheduler.CurrentTick() - cache_image.tick_accessed_last);
 
-        UNREACHABLE_MSG("Encountered unresolvable image overlap with equal memory address.");
+        // Project X: Frostbite reuses large render allocations aggressively. Reaching this
+        // path means the descriptors are not safely mergeable, but killing the emulator is worse
+        // than treating the request as a fresh alias. Prefer an already merged image, otherwise
+        // retire a stale cached image when possible and let FindImage create the requested image.
+        // This mirrors the tolerant resource-cache policy used by working Frostbite experiments:
+        // invalid/ambiguous aliases degrade to recreation rather than a host-side fatal.
+        LOG_WARNING(Render_Vulkan,
+                    "Project X/Frostbite: recovering unresolved equal-address image alias at {:#x} "
+                    "instead of aborting",
+                    image_info.guest_address);
+        if (merged_image_id) {
+            return {merged_image_id, -1, -1};
+        }
+        if (safe_to_delete) {
+            FreeImage(cache_image_id);
+        }
+        return {{}, -1, -1};
     }
 
     // Right overlap, the image requested is a possible subresource of the image from cache.

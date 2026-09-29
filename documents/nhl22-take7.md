@@ -1,3 +1,6 @@
+<!-- SPDX-FileCopyrightText: 2026 shadPS4 Emulator Project -->
+<!-- SPDX-License-Identifier: GPL-2.0-or-later -->
+
 # NHL 22 Take 7: start-screen compatibility investigation
 
 Base: `nhl22-test6-modern` at `99cd0d807475cd0354a7f95d2154e84647f73bca`.

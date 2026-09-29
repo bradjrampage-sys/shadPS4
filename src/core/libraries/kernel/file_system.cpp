@@ -158,6 +158,12 @@ s32 PS4_SYSV_ABI open(const char* raw_path, s32 flags, u16 mode) {
         }
     } else if (!exists) {
         // If we're not creating a file, and it doesn't exist, return ENOENT
+        // Record the resolved path of a missing UI request to distinguish a loose-file
+        // probe from an unexpected mount location in the next compatibility log.
+        if (path.ends_with(".lreq")) {
+            LOG_INFO(Kernel_Fs, "UI request {} resolved to missing host path {}", raw_path,
+                     file->m_host_name.string());
+        }
         h->DeleteHandle(handle);
         *__Error() = POSIX_ENOENT;
         LOG_ERROR(Kernel_Fs, "Opening path {} failed, file does not exist", raw_path);

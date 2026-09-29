@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <atomic>
+
 #include "common/assert.h"
 #include "common/elf_info.h"
 #include "common/logging/log.h"
@@ -172,6 +174,15 @@ s32 PS4_SYSV_ABI sceVideoOutSubmitFlip(s32 handle, s32 bufferIndex, s32 flipMode
     if (bufferIndex != -1 && port->buffer_slots[bufferIndex].group_index < 0) {
         LOG_ERROR(Lib_VideoOut, "Slot in bufferIndex = {} is not registered", bufferIndex);
         return ORBIS_VIDEO_OUT_ERROR_INVALID_INDEX;
+    }
+
+    // A quiet log cannot tell a stalled front end from one that keeps presenting frames.
+    // Sample sparsely so the NHL boot-flow log remains readable over a long run.
+    static std::atomic<u64> submitted_flips{0};
+    const u64 flip_count = submitted_flips.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (flip_count % 600 == 0) {
+        LOG_INFO(Lib_VideoOut, "Front-end heartbeat: {} flips submitted, buffer = {}, mode = {}",
+                 flip_count, bufferIndex, flipMode);
     }
 
     LOG_DEBUG(Lib_VideoOut, "bufferIndex = {}, flipMode = {}, flipArg = {}", bufferIndex, flipMode,

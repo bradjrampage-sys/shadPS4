@@ -3,6 +3,7 @@
 
 #include <utility>
 #include "common/adaptive_mutex.h"
+#include "common/alignment.h"
 #include "common/assert.h"
 #include "common/debug.h"
 #include "common/div_ceil.h"
@@ -435,6 +436,17 @@ struct SignalImpl : public PageManager::Impl {
         const auto is_gpu_thread =
             std::this_thread::get_id() == rasterizer->GetGpuCommandProcessorThread();
         if (Common::IsWriteError(context)) {
+#ifdef _WIN64
+            // Windows dispatches exceptions on the guest's SysV stack and can overwrite
+            // its 128-byte red zone before our handler runs. Reduce repeated write faults
+            // while the guest fills a GPU-tracked range. Only widen when the whole span
+            // is mapped; otherwise retain the precise fallback below.
+            constexpr u64 WriteFaultGranule = 64_KB;
+            const VAddr base = Common::AlignDown(addr, WriteFaultGranule);
+            if (rasterizer->InvalidateMemory(base, WriteFaultGranule, is_gpu_thread)) {
+                return true;
+            }
+#endif
             return rasterizer->InvalidateMemory(addr, 8, is_gpu_thread);
         } else {
             return rasterizer->ReadMemory(addr, 8, is_gpu_thread);

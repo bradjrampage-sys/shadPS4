@@ -96,7 +96,8 @@ int PS4_SYSV_ABI sceNetCtlUnregisterCallbackV6() {
 }
 
 int PS4_SYSV_ABI sceNetCtlCheckCallback() {
-    LOG_DEBUG(Lib_NetCtl, "(STUBBED) called");
+    LOG_DEBUG(Lib_NetCtl, "called");
+    netctl.CheckCallback();
     return ORBIS_OK;
 }
 
@@ -457,7 +458,8 @@ int PS4_SYSV_ABI Func_D8DCB6973537A3DC() {
 }
 
 int PS4_SYSV_ABI sceNetCtlCheckCallbackForNpToolkit() {
-    LOG_DEBUG(Lib_NetCtl, "(STUBBED) called");
+    LOG_DEBUG(Lib_NetCtl, "called");
+    netctl.CheckNpToolkitCallback();
     return ORBIS_OK;
 }
 
@@ -474,9 +476,13 @@ int PS4_SYSV_ABI sceNetCtlRegisterCallbackForNpToolkit(OrbisNetCtlCallbackForNpT
     s32 result = netctl.RegisterNpToolkitCallback(func, arg);
     if (result < 0) {
         return result;
-    } else {
-        *cid = result;
     }
+    *cid = result;
+
+    // Frostbite/EA front ends expect the initial connectivity state to become
+    // observable after registration. Deliver it immediately rather than requiring
+    // a later event that may never occur in offline emulation.
+    netctl.CheckNpToolkitCallback();
     return ORBIS_OK;
 }
 

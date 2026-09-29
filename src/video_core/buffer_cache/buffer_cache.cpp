@@ -153,6 +153,12 @@ void BufferCache::DownloadMemory(const Buffer* arena, VAddr device_addr, u64 siz
         return;
     }
     const auto download = staging_pool.Request(total_size_bytes, VideoCore::MemoryType::HostCached);
+    if (download.mapped == nullptr || !download.buffer) {
+        LOG_WARNING(Render_Vulkan,
+                    "NHL22/Frostbite: skipping {:#x}-byte buffer readback with unusable staging",
+                    total_size_bytes);
+        return;
+    }
     for (auto& copy : copies) {
         copy.dstOffset += download.offset;
     }

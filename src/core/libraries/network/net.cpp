@@ -807,7 +807,7 @@ int PS4_SYSV_ABI sceNetEpollControl(OrbisNetId epollid, OrbisNetEpollFlag op, Or
     }
     auto epoll = file->epoll;
     LOG_DEBUG(Lib_Net, "called, epollid = {} ({}), op = {}, id = {}", epollid, epoll->name,
-                magic_enum::enum_name(op), id);
+              magic_enum::enum_name(op), id);
 
     auto find_id = [&](OrbisNetId id) {
         return std::ranges::find_if(epoll->events, [&](auto& el) { return el.first == id; });

@@ -824,7 +824,19 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
 
     for (const auto& image_desc : stage.images) {
         const auto tsharp = image_desc.GetSharp(stage);
-        if (texture_cache.IsMeta(tsharp.Address())) {
+        if (const auto meta_type = texture_cache.IsMeta(tsharp.Address())) {
+            if (*meta_type == VideoCore::TextureCache::MetaType::CMask) {
+                // Frostbite compatibility: CMASK is metadata, not a normal color texture.
+                // Avoid constructing an image from the metadata address; bind null descriptors
+                // and let the texel-buffer path expose an expanded CMASK state instead.
+                const u32 num_bindings = image_desc.NumBindings(stage);
+                for (u32 i = 0; i < num_bindings; ++i) {
+                    image_bindings.emplace_back(std::piecewise_construct, std::tuple{},
+                                                std::tuple{});
+                }
+                image_descriptor_array_sizes.push_back(num_bindings);
+                continue;
+            }
             LOG_WARNING(Render_Vulkan, "Unexpected metadata read by a shader (texture)");
         }
 

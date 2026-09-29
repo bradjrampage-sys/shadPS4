@@ -275,6 +275,7 @@ bool Instance::CreateDevice() {
             enabled_extensions.pop_back();
         }
     }
+    hdr_metadata = add_extension(VK_EXT_HDR_METADATA_EXTENSION_NAME);
     depth_range_unrestricted = add_extension(VK_EXT_DEPTH_RANGE_UNRESTRICTED_EXTENSION_NAME);
     dynamic_state_3 = add_extension(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME);
     if (dynamic_state_3) {

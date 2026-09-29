@@ -78,6 +78,12 @@ void TextureCache::DownloadImageMemory(ImageId image_id, bool sync) {
                               image.info.resources.layers * (image.info.num_bits / 8);
     ASSERT(download_size <= image.info.guest_size);
     const auto [download, offset] = download_buffer.Map(download_size);
+    if (!download) {
+        LOG_WARNING(Render_Vulkan,
+                    "Dropping image readback: download buffer map failed for {} bytes",
+                    download_size);
+        return;
+    }
     download_buffer.Commit();
     const vk::BufferImageCopy image_download = {
         .bufferOffset = offset,

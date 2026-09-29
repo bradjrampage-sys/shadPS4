@@ -4,7 +4,6 @@
 #include <cstdlib>
 
 #include "common/assert.h"
-#include "common/elf_info.h"
 #include "common/debug.h"
 #include "common/thread.h"
 #include "core/debug_state.h"
@@ -238,10 +237,8 @@ int VideoOutDriver::ChangeBufferAttribute(VideoOutPort* port, s32 attributeIndex
 
 void VideoOutDriver::Flip(const Request& req) {
     // Update HDR status before presenting.
-    // NHL 22 requests PQ, but the current presentation path produces incorrect luminance.
-    // Prefer the SDR path for this title until the HDR conversion is corrected.
-    static const bool force_sdr = Common::ElfInfo::Instance().GameSerial() == "CUSA26280" ||
-                                  std::getenv("SHADPS4_NHL22_FORCE_SDR") != nullptr;
+    // Keep the guest-requested HDR path by default. SDR remains an explicit diagnostic only.
+    static const bool force_sdr = std::getenv("SHADPS4_NHL22_FORCE_SDR") != nullptr;
     presenter->SetHDR(req.port->is_hdr && !force_sdr);
 
     // Present the frame.

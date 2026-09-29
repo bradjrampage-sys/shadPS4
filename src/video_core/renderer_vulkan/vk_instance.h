@@ -124,6 +124,11 @@ public:
         return attachment_feedback_loop;
     }
 
+    /// Returns true if VK_EXT_hdr_metadata is enabled.
+    bool IsHdrMetadataSupported() const {
+        return hdr_metadata;
+    }
+
     /// Returns true when VK_EXT_custom_border_color is supported
     bool IsCustomBorderColorSupported() const {
         return custom_border_color;
@@ -530,6 +535,7 @@ private:
     bool maintenance_5{};
     bool maintenance_8{};
     bool attachment_feedback_loop{};
+    bool hdr_metadata{};
     bool image_2d_view_of_3d{};
     bool image_view_min_lod{};
     bool shader_clock{};

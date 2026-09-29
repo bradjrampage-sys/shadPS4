@@ -474,9 +474,23 @@ int PS4_SYSV_ABI sceKernelWaitEqueue(OrbisKernelEqueue eq, OrbisKernelEvent* ev,
 
     const bool eop_queue = equeue->GetName() == "GfxEopQueue";
     static std::atomic<u64> eop_waits{0};
+    static std::atomic<u64> project_x_waits{0};
     const u64 wait_count = eop_queue ? eop_waits.fetch_add(1, std::memory_order_relaxed) + 1 : 0;
+    const bool potentially_blocking = timo == nullptr || *timo >= 100000;
+    const u64 project_x_wait_count =
+        !eop_queue && potentially_blocking
+            ? project_x_waits.fetch_add(1, std::memory_order_relaxed) + 1
+            : 0;
+    const bool log_project_x_wait =
+        project_x_wait_count != 0 &&
+        (project_x_wait_count <= 128 || project_x_wait_count % 512 == 0);
     if (eop_queue && (wait_count == 1 || wait_count % 60 == 0)) {
         LOG_INFO(Kernel_Event, "Take8 EOP wait begin: count={}, timeout_us={}", wait_count,
+                 timo ? static_cast<s64>(*timo) : -1);
+    }
+    if (log_project_x_wait) {
+        LOG_INFO(Kernel_Event, "Project X wait: equeue='{}' count={} num={} timeout_us={}",
+                 equeue->GetName(), project_x_wait_count, num,
                  timo ? static_cast<s64>(*timo) : -1);
     }
 
@@ -493,6 +507,10 @@ int PS4_SYSV_ABI sceKernelWaitEqueue(OrbisKernelEqueue eq, OrbisKernelEvent* ev,
 
     if (eop_queue && (wait_count == 1 || wait_count % 60 == 0)) {
         LOG_INFO(Kernel_Event, "Take8 EOP wait end: count={}, events={}", wait_count, *out);
+    }
+    if (log_project_x_wait) {
+        LOG_INFO(Kernel_Event, "Project X wake: equeue='{}' count={} events={}",
+                 equeue->GetName(), project_x_wait_count, *out);
     }
 
     if (*out == 0) {

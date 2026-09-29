@@ -179,6 +179,9 @@ void Scheduler::EndSession() {
     }
 
     EndRendering();
+    if (pre_submit) {
+        pre_submit();
+    }
     Check(session.primary.end());
 }
 

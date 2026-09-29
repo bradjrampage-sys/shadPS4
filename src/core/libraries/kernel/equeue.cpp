@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <atomic>
 #include <thread>
 #include <magic_enum/magic_enum.hpp>
 
@@ -471,6 +472,14 @@ int PS4_SYSV_ABI sceKernelWaitEqueue(OrbisKernelEqueue eq, OrbisKernelEvent* ev,
     TRACE_HINT(equeue->GetName());
     LOG_TRACE(Kernel_Event, "equeue = {} num = {}", equeue->GetName(), num);
 
+    const bool eop_queue = equeue->GetName() == "GfxEopQueue";
+    static std::atomic<u64> eop_waits{0};
+    const u64 wait_count = eop_queue ? eop_waits.fetch_add(1, std::memory_order_relaxed) + 1 : 0;
+    if (eop_queue && (wait_count == 1 || wait_count % 60 == 0)) {
+        LOG_INFO(Kernel_Event, "Take8 EOP wait begin: count={}, timeout_us={}", wait_count,
+                 timo ? static_cast<s64>(*timo) : -1);
+    }
+
     if (ev == nullptr) {
         return ORBIS_KERNEL_ERROR_EFAULT;
     }
@@ -481,6 +490,10 @@ int PS4_SYSV_ABI sceKernelWaitEqueue(OrbisKernelEqueue eq, OrbisKernelEvent* ev,
     }
 
     *out = equeue->WaitForEvents(ev, num, timo);
+
+    if (eop_queue && (wait_count == 1 || wait_count % 60 == 0)) {
+        LOG_INFO(Kernel_Event, "Take8 EOP wait end: count={}, events={}", wait_count, *out);
+    }
 
     if (*out == 0) {
         return ORBIS_KERNEL_ERROR_ETIMEDOUT;

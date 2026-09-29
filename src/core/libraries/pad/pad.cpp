@@ -13,6 +13,7 @@
 #include "pad.h"
 
 #include <algorithm>
+#include <atomic>
 #include <array>
 #include <optional>
 
@@ -441,7 +442,24 @@ int PS4_SYSV_ABI scePadRead(s32 handle, OrbisPadData* pData, s32 num) {
     auto& controller = *it->second;
     std::array<Input::State, ORBIS_PAD_MAX_DATA_NUM> states;
     const int ret_num = controller.ReadStates(states.data(), num);
-    return ProcessStates(pData, states.data(), ret_num);
+    const int result = ProcessStates(pData, states.data(), ret_num);
+    if (result > 0) {
+        // Report input edges at info level so a front-end transition can be aligned with
+        // GPU fences and flips without logging every poll.
+        constexpr u32 tracked = u32(OrbisPadButtonDataOffset::Cross) |
+                                u32(OrbisPadButtonDataOffset::Options);
+        static std::atomic<u32> previous_buttons{0};
+        const u32 buttons = u32(pData[0].buttons);
+        const u32 previous = previous_buttons.exchange(buttons, std::memory_order_relaxed);
+        if ((buttons ^ previous) & tracked) {
+            LOG_INFO(Lib_Pad,
+                     "Take8 input edge: handle={} cross={} options={} connected={} intercepted={}",
+                     handle, bool(buttons & u32(OrbisPadButtonDataOffset::Cross)),
+                     bool(buttons & u32(OrbisPadButtonDataOffset::Options)), pData[0].connected,
+                     bool(buttons & u32(OrbisPadButtonDataOffset::Intercepted)));
+        }
+    }
+    return result;
 }
 
 int PS4_SYSV_ABI scePadReadBlasterForTracker() {

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <boost/preprocessor/stringize.hpp>
+#include <atomic>
 
 #include "common/assert.h"
 #include "common/debug.h"
@@ -681,6 +682,13 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
             }
             case PM4ItOpcode::EventWriteEop: {
                 const auto* event_eop = reinterpret_cast<const PM4CmdEventWriteEop*>(header);
+                static std::atomic<u64> eops_queued{0};
+                static std::atomic<u64> eops_signaled{0};
+                const u64 queued = eops_queued.fetch_add(1, std::memory_order_relaxed) + 1;
+                if (queued == 1 || queued % 60 == 0) {
+                    LOG_INFO(Render, "Take8 EOP queued={}, signaled={}", queued,
+                             eops_signaled.load(std::memory_order_relaxed));
+                }
                 auto signal = [eop = *event_eop] {
                     eop.SignalFence(
                         [](void* address, u64 data, u32 num_bytes) {
@@ -688,6 +696,10 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                             ASSERT(memory->TryWriteBacking(address, &data, num_bytes));
                         },
                         [] { Platform::IrqC::Instance()->Signal(Platform::InterruptId::GfxEop); });
+                    const u64 done = eops_signaled.fetch_add(1, std::memory_order_relaxed) + 1;
+                    if (done == 1 || done % 60 == 0) {
+                        LOG_INFO(Render, "Take8 EOP signaled={}", done);
+                    }
                 };
                 if (rasterizer) {
                     rasterizer->OnFence();

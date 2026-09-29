@@ -180,8 +180,8 @@ s32 PS4_SYSV_ABI sceVideoOutSubmitFlip(s32 handle, s32 bufferIndex, s32 flipMode
     // Sample sparsely so the NHL boot-flow log remains readable over a long run.
     static std::atomic<u64> submitted_flips{0};
     const u64 flip_count = submitted_flips.fetch_add(1, std::memory_order_relaxed) + 1;
-    if (flip_count % 600 == 0) {
-        LOG_INFO(Lib_VideoOut, "Front-end heartbeat: {} flips submitted, buffer = {}, mode = {}",
+    if (flip_count == 1 || flip_count % 60 == 0) {
+        LOG_INFO(Lib_VideoOut, "Take8 flip submit: {} flips, buffer = {}, mode = {}",
                  flip_count, bufferIndex, flipMode);
     }
 
@@ -479,6 +479,9 @@ s32 PS4_SYSV_ABI sceVideoOutConfigureOutputMode_(s32 handle, u32 reserved, const
     default:
         return ORBIS_VIDEO_OUT_ERROR_INVALID_VALUE;
     }
+
+    LOG_INFO(Lib_VideoOut, "Take8 output mode: colorimetry={}, game_hdr={}",
+             u32(mode->colorimetry), port->is_hdr);
 
     return ORBIS_OK;
 }

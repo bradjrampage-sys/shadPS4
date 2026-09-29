@@ -90,6 +90,8 @@ void Swapchain::SetHDR(bool hdr) {
         return;
     }
 
+    LOG_INFO(Render_Vulkan, "Take8 swapchain color space: HDR {} -> {}", needs_hdr, hdr);
+
     auto result = instance.GetDevice().waitIdle();
     if (result != vk::Result::eSuccess) {
         LOG_WARNING(ImGui, "Failed to wait for Vulkan device idle on mode change: {}",
@@ -164,6 +166,8 @@ void Swapchain::FindPresentFormat() {
         }) != formats.end();
     // Also make sure that user allowed us to use HDR
     supports_hdr &= EmulatorSettings.IsHdrAllowed();
+    LOG_INFO(Render_Vulkan, "Take8 HDR availability: enabled={} by settings and display",
+             supports_hdr);
 
     // If there is a single undefined surface format, the device doesn't care, so we'll just use
     // RGBA sRGB.

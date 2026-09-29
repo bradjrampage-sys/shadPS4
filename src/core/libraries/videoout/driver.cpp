@@ -246,6 +246,10 @@ void VideoOutDriver::Flip(const Request& req) {
         std::unique_lock lock{port->port_mutex};
         auto& flip_status = port->flip_status;
         flip_status.count++;
+        if (flip_status.count == 1 || flip_status.count % 60 == 0) {
+            LOG_INFO(Lib_VideoOut, "Take8 flip complete: count={}, buffer={}, pending={}, eop={}",
+                     flip_status.count, req.index, flip_status.flip_pending_num, req.eop);
+        }
         flip_status.process_time = Libraries::Kernel::sceKernelGetProcessTime();
         flip_status.tsc = Libraries::Kernel::sceKernelReadTsc();
         flip_status.flip_arg = req.flip_arg;

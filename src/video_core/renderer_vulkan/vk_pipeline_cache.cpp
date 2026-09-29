@@ -3,6 +3,7 @@
 
 #include <ranges>
 
+#include "common/elf_info.h"
 #include "common/hash.h"
 #include "common/io_file.h"
 #include "common/path_util.h"
@@ -315,8 +316,12 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
             instance_.IsAmdShaderExplicitVertexParameterSupported(),
         .supports_fragment_shader_barycentric = instance_.IsFragmentShaderBarycentricSupported(),
         .supports_shader_subgroup_clock = instance_.IsShaderSubgroupClockSupported(),
-        .needs_manual_interpolation = instance.IsFragmentShaderBarycentricSupported() &&
-                                      instance.GetDriverID() == vk::DriverId::eNvidiaProprietary,
+        // Frostbite's projected/interpolated tests have exposed failures in the NVIDIA-only
+        // manual barycentric reconstruction path. NHL22 uses the hardware interpolation path.
+        .needs_manual_interpolation =
+            Common::ElfInfo::Instance().GameSerial() != "CUSA26280" &&
+            instance.IsFragmentShaderBarycentricSupported() &&
+            instance.GetDriverID() == vk::DriverId::eNvidiaProprietary,
         .needs_lds_barriers = instance.GetDriverID() == vk::DriverId::eNvidiaProprietary ||
                               instance.GetDriverID() == vk::DriverId::eMesaKosmickrisp,
         .needs_buffer_offsets = instance.StorageMinAlignment() > 4,

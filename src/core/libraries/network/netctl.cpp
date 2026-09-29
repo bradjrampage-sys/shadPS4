@@ -386,9 +386,12 @@ int PS4_SYSV_ABI sceNetCtlRegisterCallback(OrbisNetCtlCallback func, void* arg, 
     s32 result = netctl.RegisterCallback(func, arg);
     if (result < 0) {
         return result;
-    } else {
-        *cid = result;
     }
+    *cid = result;
+
+    // Mirror the current network state immediately. Some Frostbite boot flows
+    // register a callback and then wait for the first state notification.
+    netctl.CheckCallback();
     return ORBIS_OK;
 }
 

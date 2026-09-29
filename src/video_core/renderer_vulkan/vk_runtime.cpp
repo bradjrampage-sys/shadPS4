@@ -346,7 +346,9 @@ void Runtime::CopyImageWithBuffer(VideoCore::Image* src, VideoCore::Image* dst,
             .layerCount = num_layers,
         },
         .imageOffset = {0, 0, 0},
-        .imageExtent = {src->info.size.width, src->info.size.height, src->info.size.depth},
+        .imageExtent = {std::min(src->info.size.width, dst->info.size.width),
+                        std::min(src->info.size.height, dst->info.size.height),
+                        std::min(src->info.size.depth, dst->info.size.depth)},
     };
     const auto copy_size = BufferImageCopySize(buffer_copy, src->info.pixel_format);
 
@@ -502,7 +504,8 @@ void Runtime::CopyDepthStencil(VideoCore::Image* src, VideoCore::Image* dst,
             .layerCount = sub_range.extent.layers,
         },
         .dstOffset = {0, 0, 0},
-        .extent = {dst->info.size.width, dst->info.size.height, 1},
+        .extent = {std::min(src->info.size.width, dst->info.size.width),
+                   std::min(src->info.size.height, dst->info.size.height), 1},
     };
 
     const auto cmdbuf = scheduler.CommandBuffer();
@@ -549,7 +552,8 @@ void Runtime::ResolveImage(VideoCore::Image* src, VideoCore::Image* dst,
                 .layerCount = dst_layers,
             },
             .dstOffset = {0, 0, 0},
-            .extent = {src->info.size.width, src->info.size.height, 1},
+            .extent = {std::min(src->info.size.width, dst->info.size.width),
+                       std::min(src->info.size.height, dst->info.size.height), 1},
         };
         cmdbuf.copyImage(src->GetImage(), vk::ImageLayout::eTransferSrcOptimal, dst->GetImage(),
                          vk::ImageLayout::eTransferDstOptimal, region);
@@ -569,7 +573,8 @@ void Runtime::ResolveImage(VideoCore::Image* src, VideoCore::Image* dst,
                 .layerCount = dst_layers,
             },
             .dstOffset = {0, 0, 0},
-            .extent = {src->info.size.width, src->info.size.height, 1},
+            .extent = {std::min(src->info.size.width, dst->info.size.width),
+                       std::min(src->info.size.height, dst->info.size.height), 1},
         };
         cmdbuf.resolveImage(src->GetImage(), vk::ImageLayout::eTransferSrcOptimal, dst->GetImage(),
                             vk::ImageLayout::eTransferDstOptimal, region);

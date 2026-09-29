@@ -266,7 +266,7 @@ struct LogSettings {
     Setting<bool> separate{false}; // specific
     Setting<unsigned long long> size_limit{100_MB};
     Setting<bool> skip_duplicate{true};
-    Setting<bool> sync{true};
+    Setting<bool> sync{false};
 #ifdef _WIN32
     Setting<std::string> type{"wincolor"};
 #endif
@@ -484,7 +484,7 @@ struct VulkanSettings {
     Setting<bool> vkcrash_diagnostic_enabled{false};
     Setting<bool> vkhost_markers{false};
     Setting<bool> vkguest_markers{false};
-    Setting<bool> pipeline_cache_enabled{false};
+    Setting<bool> pipeline_cache_enabled{true};
     Setting<bool> pipeline_cache_archived{false};
     std::vector<OverrideItem> GetOverrideableFields() const {
         return std::vector<OverrideItem>{

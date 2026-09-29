@@ -80,6 +80,20 @@ void TextureCache::DownloadImageMemory(ImageId image_id, bool sync) {
     ASSERT(download_size <= image.info.guest_size);
     const auto download =
         runtime.GetStagingPool().Request(download_size, MemoryType::HostCached, 16, !sync);
+    if (download.mapped == nullptr || !download.buffer) {
+        LOG_WARNING(Render_Vulkan,
+                    "NHL22/Frostbite: skipping {:#x}-byte image readback with unusable staging",
+                    download_size);
+        return;
+    }
+    if (image.info.pitch < image.info.size.width ||
+        image.info.size.height == 0 || image.info.size.depth == 0) {
+        LOG_WARNING(Render_Vulkan,
+                    "NHL22/Frostbite: rejecting invalid image readback layout {}x{}x{} pitch={}",
+                    image.info.size.width, image.info.size.height, image.info.size.depth,
+                    image.info.pitch);
+        return;
+    }
     const vk::BufferImageCopy image_download = {
         .bufferOffset = download.offset,
         .bufferRowLength = image.info.pitch,

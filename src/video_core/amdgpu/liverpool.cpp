@@ -658,6 +658,10 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                         const bool zero_samples =
                             occlusion_mode && std::strcmp(occlusion_mode, "zero") == 0;
                         u64* results = event->Address<u64*>();
+                        if (rasterizer != nullptr &&
+                            rasterizer->OcclusionQueryDump(results, num_counter_pairs)) {
+                            break;
+                        }
                         for (s32 i = 0; i < num_counter_pairs; ++i, results += 2) {
                             *results = (zero_samples ? 0 : pixel_counter) | OcclusionCounterValidMask;
                         }

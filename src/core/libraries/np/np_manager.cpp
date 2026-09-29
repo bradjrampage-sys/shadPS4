@@ -1021,7 +1021,7 @@ s32 PS4_SYSV_ABI sceNpRegisterStateCallback(OrbisNpStateCallback callback, void*
         return ORBIS_NP_ERROR_INVALID_ARGUMENT;
     }
 
-    std::scoped_lock lk{g_np_state_callbacks_mutex};
+    std::unique_lock lk{g_np_state_callbacks_mutex};
     if (LegacyNpStateCb.func != nullptr) {
         return ORBIS_NP_ERROR_CALLBACK_ALREADY_REGISTERED;
     }
@@ -1061,7 +1061,7 @@ s32 PS4_SYSV_ABI sceNpRegisterNpReachabilityStateCallback(OrbisNpReachabilitySta
         return ORBIS_NP_ERROR_INVALID_ARGUMENT;
     }
 
-    std::scoped_lock lk{g_np_state_callbacks_mutex};
+    std::unique_lock lk{g_np_state_callbacks_mutex};
     if (NpReachabilityCb.func != nullptr) {
         LOG_ERROR(Lib_NpManager, "callback already registered, cannot register multiple");
         return ORBIS_NP_ERROR_CALLBACK_ALREADY_REGISTERED;

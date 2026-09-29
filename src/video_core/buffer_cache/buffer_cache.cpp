@@ -131,6 +131,12 @@ void BufferCache::DownloadBufferMemory(Buffer& buffer, VAddr device_addr, u64 si
         return;
     }
     const auto [download, offset] = download_buffer.Map(total_size_bytes);
+    if (!download) {
+        LOG_WARNING(Render_Vulkan,
+                    "Dropping buffer readback: download buffer map failed for {} bytes",
+                    total_size_bytes);
+        return;
+    }
     for (auto& copy : copies) {
         // Modify copies to have the staging offset in mind
         copy.dstOffset += offset;
@@ -154,16 +160,18 @@ void BufferCache::DownloadBufferMemory(Buffer& buffer, VAddr device_addr, u64 si
         .pBufferMemoryBarriers = &pre_barrier,
     });
     cmdbuf.copyBuffer(buffer.buffer, download_buffer.Handle(), copies);
-    const auto write_data = [&]() {
-        auto* memory = Core::Memory::Instance();
-        for (const auto& copy : copies) {
-            const VAddr copy_device_addr = buffer.CpuAddr() + copy.srcOffset;
-            const u64 dst_offset = copy.dstOffset - offset;
-            memory->TryWriteBacking(std::bit_cast<u8*>(copy_device_addr), download + dst_offset,
-                                    copy.size);
-        }
-        memory_tracker->UnmarkRegionAsGpuModified(device_addr, size);
-    };
+    const VAddr buffer_addr = buffer.CpuAddr();
+    const auto write_data =
+        [this, copies, buffer_addr, offset, download, device_addr, size]() {
+            auto* memory = Core::Memory::Instance();
+            for (const auto& copy : copies) {
+                const VAddr copy_device_addr = buffer_addr + copy.srcOffset;
+                const u64 dst_offset = copy.dstOffset - offset;
+                memory->TryWriteBacking(std::bit_cast<u8*>(copy_device_addr),
+                                        download + dst_offset, copy.size);
+            }
+            memory_tracker->UnmarkRegionAsGpuModified(device_addr, size);
+        };
     if constexpr (async) {
         scheduler.DeferOperation(write_data);
     } else {

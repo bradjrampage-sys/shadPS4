@@ -320,9 +320,9 @@ std::tuple<ImageId, int, int> TextureCache::ResolveOverlap(const ImageInfo& imag
                         "cached levels={} size={:#x} pow2={}, requested levels={} size={:#x} "
                         "pow2={}",
                         image_info.guest_address, cache_image.info.resources.levels,
-                        cache_image.info.guest_size, cache_image.info.props.is_pow2,
+                        cache_image.info.guest_size, bool(cache_image.info.props.is_pow2),
                         image_info.resources.levels, image_info.guest_size,
-                        image_info.props.is_pow2);
+                        bool(image_info.props.is_pow2));
             return {cache_image_id, 0, 0};
         }
 

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <cstdlib>
+#include "common/elf_info.h"
 #include "shader_recompiler/backend/spirv/emit_spirv_instructions.h"
 #include "shader_recompiler/backend/spirv/spirv_emit_context.h"
 #include "shader_recompiler/ir/debug_print.h"
@@ -82,9 +83,14 @@ void EmitDiscard(EmitContext& ctx) {
 }
 
 void EmitDiscardCond(EmitContext& ctx, Id condition) {
-    // Frostbite diagnostic escape hatch lifted from the Battlefield fork. It is deliberately
-    // opt-in because globally dropping shader discards can destroy scene correctness.
-    static const bool ignore_discard = std::getenv("SHADPS4_NO_DISCARD") != nullptr;
+    // Project X: Frostbite sports front-ends can transition successfully while their UI pass is
+    // fully clipped by conditional discards. Keep this aggressive workaround title-scoped so
+    // normal shadPS4 rendering is untouched. The donor escape hatch remains available globally,
+    // while SHADPS4_KEEP_DISCARD disables the NHL22 override for A/B testing.
+    static const bool ignore_discard =
+        std::getenv("SHADPS4_NO_DISCARD") != nullptr ||
+        (Common::ElfInfo::Instance().GameSerial() == "CUSA26280" &&
+         std::getenv("SHADPS4_KEEP_DISCARD") == nullptr);
     if (ignore_discard) {
         return;
     }

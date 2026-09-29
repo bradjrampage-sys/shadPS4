@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <unordered_map>
+
 #include "common/recursive_lock.h"
 #include "common/shared_first_mutex.h"
 #include "video_core/buffer_cache/buffer_cache.h"
@@ -49,6 +51,11 @@ public:
     void Draw(bool is_indexed, u32 index_offset = 0);
     void DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u32 size, u32 max_count,
                       VAddr count_address, u16 vertex_sgpr_offset, u16 instance_sgpr_offset);
+
+    // Frostbite uses pixel-pipe statistic dumps as occlusion queries. Service
+    // them with Vulkan when possible instead of inventing a monotonically rising count.
+    bool OcclusionQueryDump(u64* results, s32 num_pairs);
+    void CloseOcclusionQuery();
 
     void DispatchDirect();
     void DispatchIndirect(VAddr address, u32 offset, u32 size);
@@ -104,6 +111,17 @@ public:
 #endif
 
 private:
+    vk::UniqueQueryPool occlusion_pool;
+    u32 occlusion_slot{};
+    bool occlusion_active{};
+    vk::CommandBuffer occlusion_cmdbuf;
+    u32 occlusion_prev_slot{};
+    bool occlusion_prev_valid{};
+    bool occlusion_aborted{};
+    VAddr occlusion_pending_addr{};
+    std::array<VAddr, 64> occlusion_subjects{};
+    std::unordered_map<VAddr, u64> occlusion_history;
+
     void PrepareRenderState(const GraphicsPipeline* pipeline);
     RenderState BeginRendering(const GraphicsPipeline* pipeline);
     void Resolve();

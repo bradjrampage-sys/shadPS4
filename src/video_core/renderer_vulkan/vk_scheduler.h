@@ -348,6 +348,7 @@ struct DynamicState {
 };
 
 using SessionFunc = Common::UniqueFunction<void>;
+using PreSubmitFunc = Common::UniqueFunction<void>;
 using SubmitFunc = Common::UniqueFunction<void, SubmitInfo&>;
 
 class Scheduler {
@@ -387,6 +388,12 @@ public:
     /// Sets a function to be called on every session finalization.
     void SetSessionCallback(SessionFunc&& on_session) {
         this->on_session = std::move(on_session);
+    }
+
+    /// Sets a function to be called after rendering ends but before the command
+    /// buffer is closed. Frostbite occlusion queries must begin/end in one buffer.
+    void SetPreSubmitCallback(PreSubmitFunc&& pre_submit) {
+        this->pre_submit = std::move(pre_submit);
     }
 
     /// Sets a function to be called on every scheduler submission.
@@ -460,6 +467,7 @@ private:
     CommandPool command_pool;
     DynamicState dynamic_state;
     SessionFunc on_session{};
+    PreSubmitFunc pre_submit{};
     SubmitFunc on_submit{};
     struct Session {
         vk::CommandBuffer upload{};

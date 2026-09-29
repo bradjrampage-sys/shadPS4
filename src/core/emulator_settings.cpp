@@ -407,10 +407,27 @@ bool EmulatorSettingsImpl::Load(const std::string& serial) {
             // Never reloads global settings. Only applies
             // game_specific_value overrides on top of the already-loaded
             // base configuration.
+            const auto apply_project_x_frostbite_defaults = [&] {
+                if (serial != "CUSA26280") {
+                    return;
+                }
+
+                // Project X: same-era Frostbite sports titles are known to progress farther with
+                // GPU readbacks enabled, and NHL22's stable title-screen run used this exact
+                // policy. Keep it title-scoped and prioritize correctness/progression over speed.
+                m_gpu.readbacks_mode.set(GpuReadbacksMode::Precise, true);
+                m_gpu.readback_linear_images_enabled.set(true, true);
+                LOG_INFO(Config,
+                         "Project X Frostbite profile: forcing precise readbacks and linear-image "
+                         "readbacks for {}",
+                         serial);
+            };
+
             const auto gamePath =
                 Common::FS::GetUserPath(Common::FS::PathType::CustomConfigs) / (serial + ".json");
 
             if (!std::filesystem::exists(gamePath)) {
+                apply_project_x_frostbite_defaults();
                 return false;
             }
 
@@ -447,6 +464,7 @@ bool EmulatorSettingsImpl::Load(const std::string& serial) {
             if (gj.contains("Vulkan"))
                 ApplyGroupOverrides(m_vulkan, gj.at("Vulkan"), changed);
 
+            apply_project_x_frostbite_defaults();
             PrintChangedSummary(changed);
             EmulatorState::GetInstance()->SetGameSpecifigConfigUsed(true);
             return true;

@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2025 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <atomic>
 #include <algorithm>
 #include <chrono>
 #include <cstring>
@@ -105,6 +106,25 @@ int PthreadCond::Wait(PthreadMutexT* mutex, const OrbisKernelTimespec* abstime, 
 
     Pthread* curthread = g_curthread;
     ASSERT_MSG(curthread->wchan == nullptr, "Thread was already on queue.");
+
+    static std::atomic<u64> project_x_cond_waits{0};
+    const bool potentially_blocking = abstime == nullptr || abstime == THR_RELTIME || usec >= 100000;
+    const u64 project_x_wait_count =
+        potentially_blocking
+            ? project_x_cond_waits.fetch_add(1, std::memory_order_relaxed) + 1
+            : 0;
+    const bool log_project_x_wait =
+        project_x_wait_count != 0 &&
+        (project_x_wait_count <= 128 || project_x_wait_count % 512 == 0);
+    if (log_project_x_wait) {
+        LOG_INFO(Lib_Kernel,
+                 "Project X cond wait: name='{}' count={} thread='{}' mutex='{}' "
+                 "relative={} timeout_us={}",
+                 name, project_x_wait_count, curthread ? curthread->name : "<unknown>",
+                 mp ? mp->name : "<null>", abstime == THR_RELTIME,
+                 abstime == nullptr ? -1 : static_cast<s64>(usec));
+    }
+
     PthreadTestCancel();
     SleepqLock(this);
 
@@ -189,6 +209,11 @@ int PthreadCond::Wait(PthreadMutexT* mutex, const OrbisKernelTimespec* abstime, 
     }
     SleepqUnlock(this);
     curthread->mutex_obj = nullptr;
+    if (log_project_x_wait) {
+        LOG_INFO(Lib_Kernel,
+                 "Project X cond wake: name='{}' count={} thread='{}' error={}",
+                 name, project_x_wait_count, curthread ? curthread->name : "<unknown>", error);
+    }
     const int error2 = mp->CvLock(recurse);
     curthread->cancel_point = false;
     PthreadCancelInterrupt();

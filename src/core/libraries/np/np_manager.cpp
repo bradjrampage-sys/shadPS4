@@ -1062,10 +1062,41 @@ s32 PS4_SYSV_ABI sceNpUnregisterNpReachabilityStateCallback() {
 
 s32 PS4_SYSV_ABI sceNpRegisterStateCallbackForToolkit(OrbisNpStateCallbackForNpToolkit callback,
                                                       void* userdata) {
-    LOG_ERROR(Lib_NpManager, "(STUBBED) called");
-    std::scoped_lock lk{g_np_state_callbacks_mutex};
-    NpStateCbForNp.func = callback;
-    NpStateCbForNp.userdata = userdata;
+    if (callback == nullptr) {
+        return ORBIS_NP_ERROR_INVALID_ARGUMENT;
+    }
+
+    {
+        std::scoped_lock lk{g_np_state_callbacks_mutex};
+        if (NpStateCbForNp.func != nullptr) {
+            return ORBIS_NP_ERROR_CALLBACK_ALREADY_REGISTERED;
+        }
+        NpStateCbForNp.func = callback;
+        NpStateCbForNp.userdata = userdata;
+    }
+
+    // Frostbite front ends register this path even while offline and expect an
+    // initial profile state. Seed it immediately instead of returning fake success.
+    const auto logged_in = UserManagement.GetLoggedInUsers();
+    bool queued = false;
+    for (const auto* user : logged_in) {
+        if (user == nullptr) {
+            continue;
+        }
+        const auto state =
+            (g_shadnet_enabled &&
+             Libraries::Np::NpHandler::GetInstance().IsPsnSignedIn(user->user_id))
+                ? OrbisNpState::SignedIn
+                : OrbisNpState::SignedOut;
+        QueueNpStateEvent(user->user_id, state);
+        queued = true;
+    }
+    if (!queued) {
+        QueueNpStateEvent(UserManagement.GetDefaultUser().user_id, OrbisNpState::SignedOut);
+    }
+
+    LOG_INFO(Lib_NpManager, "NP Toolkit state callback registered; dispatching initial state");
+    DispatchPendingNpStateCallbacks();
     return ORBIS_OK;
 }
 

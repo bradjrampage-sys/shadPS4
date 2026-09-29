@@ -133,10 +133,28 @@ public:
         AddWaiter(waiter);
 
         u32 timeout = 0;
-        bool infinite = ptr_micros == nullptr;
+        const bool infinite = ptr_micros == nullptr;
 
         if (!infinite)
             timeout = *ptr_micros;
+
+        static std::atomic<u64> project_x_event_waits{0};
+        const bool potentially_blocking = infinite || timeout >= 100000;
+        const u64 project_x_wait_count =
+            potentially_blocking
+                ? project_x_event_waits.fetch_add(1, std::memory_order_relaxed) + 1
+                : 0;
+        const bool log_project_x_wait =
+            project_x_wait_count != 0 &&
+            (project_x_wait_count <= 128 || project_x_wait_count % 512 == 0);
+        if (log_project_x_wait) {
+            LOG_INFO(Kernel_Event,
+                     "Project X event wait: name='{}' count={} thread='{}' bits={:#x} "
+                     "current={:#x} mode={} clear={} timeout_us={}",
+                     m_name, project_x_wait_count, g_curthread ? g_curthread->name : "<unknown>",
+                     bits, m_bits, static_cast<int>(wait_mode), static_cast<int>(clear_mode),
+                     infinite ? -1 : static_cast<s64>(timeout));
+        }
 
         auto wake = [&] {
             return waiter.ready || waiter.canceled || waiter.deleted || waiter.timed_out;
@@ -158,6 +176,15 @@ public:
         }
 
         RemoveWaiter(waiter);
+
+        if (log_project_x_wait) {
+            LOG_INFO(Kernel_Event,
+                     "Project X event wake: name='{}' count={} thread='{}' result={:#x} "
+                     "ready={} canceled={} deleted={} timed_out={}",
+                     m_name, project_x_wait_count, g_curthread ? g_curthread->name : "<unknown>",
+                     waiter.result, waiter.ready, waiter.canceled, waiter.deleted,
+                     waiter.timed_out);
+        }
 
         if (result)
             *result = waiter.result;

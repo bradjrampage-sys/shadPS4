@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <unordered_map>
+
 #include "common/recursive_lock.h"
 #include "common/shared_first_mutex.h"
 #include "video_core/buffer_cache/buffer_cache.h"
@@ -49,6 +51,11 @@ public:
     void Draw(bool is_indexed, u32 index_offset = 0);
     void DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u32 size, u32 max_count,
                       VAddr count_address, u16 vertex_sgpr_offset, u16 instance_sgpr_offset);
+
+    /// Service PS4 pixel-pipe statistic dumps using Vulkan occlusion queries.
+    /// Returns false when the query cannot be serviced so Liverpool can use its safe fallback.
+    bool OcclusionQueryDump(u64* results, s32 num_pairs);
+    void CloseOcclusionQuery();
 
     void DispatchDirect();
     void DispatchIndirect(VAddr address, u32 offset, u32 size);
@@ -149,6 +156,18 @@ private:
     PipelineCache pipeline_cache;
     const bool host_markers_enabled;
     const bool guest_markers_enabled;
+
+    // Frostbite uses PixelPipeStatDump as an occlusion-query mechanism. Keep a small rotating
+    // Vulkan query pool and one-frame-late per-address history instead of inventing visibility.
+    vk::UniqueQueryPool occlusion_pool;
+    u32 occlusion_slot{};
+    bool occlusion_active{};
+    vk::CommandBuffer occlusion_cmdbuf;
+    u32 occlusion_prev_slot{};
+    bool occlusion_prev_valid{};
+    bool occlusion_aborted{};
+    VAddr occlusion_prev_subject{};
+    std::unordered_map<VAddr, u64> occlusion_history;
 
     using RenderTargetInfo = std::pair<VideoCore::ImageId, VideoCore::TextureCache::ImageDesc>;
     std::array<RenderTargetInfo, AmdGpu::NUM_COLOR_BUFFERS> cb_descs;

@@ -343,9 +343,15 @@ bool BufferCache::SynchronizeMemoryFromImage(const Buffer* arena, VAddr device_a
             static constexpr u32 ZmaskUncompressed = 0xf;
             runtime.FillBuffer(arena, arena->Offset(device_addr), size, ZmaskUncompressed);
             return true;
-        } else {
-            LOG_WARNING(Render_Vulkan, "Unhandled metadata type {}", magic_enum::enum_name(*type));
         }
+        if (*type == TextureCache::MetaType::CMask) {
+            // Frostbite compatibility: expose CMASK as fully expanded/uncompressed.
+            // For non-MSAA GCN CMASK the COLOR_EXPANDED value is 0xF per nibble.
+            static constexpr u32 CmaskColorExpanded = 0xffffffffu;
+            runtime.FillBuffer(arena, arena->Offset(device_addr), size, CmaskColorExpanded);
+            return true;
+        }
+        LOG_WARNING(Render_Vulkan, "Unhandled metadata type {}", magic_enum::enum_name(*type));
     }
     const ImageId image_id = texture_cache.FindImageFromRange(device_addr, size);
     if (!image_id) {

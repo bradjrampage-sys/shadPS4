@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <cstdlib>
 #include "common/debug.h"
 #include "core/debug_state.h"
 #include "core/emulator_settings.h"
@@ -49,12 +50,123 @@ Rasterizer::Rasterizer(const Instance& instance_, Scheduler& scheduler_, Runtime
     scheduler.SetSessionCallback([this] { buffer_cache.FlushSyncBatch(true); });
 
     scheduler.SetSubmitCallback([this](Vulkan::SubmitInfo& info) {
+        // Queries may span guest draws, but they may not remain open across a submitted command
+        // buffer. Close any partial measurement before the scheduler hands work to Vulkan.
+        CloseOcclusionQuery();
         runtime.FlushBarriers();
         buffer_cache.SubmitPendingArenaBinds(info);
     });
 }
 
 Rasterizer::~Rasterizer() = default;
+
+static constexpr u32 NumOcclusionSlots = 64;
+static constexpr u64 OcclusionValidMask = 0x8000000000000000ULL;
+
+void Rasterizer::CloseOcclusionQuery() {
+    if (!occlusion_active) {
+        return;
+    }
+    scheduler.EndRendering();
+    scheduler.CommandBuffer().endQuery(*occlusion_pool, occlusion_slot);
+    occlusion_active = false;
+    // This is only a partial pair. Do not reuse it as a real answer.
+    occlusion_aborted = true;
+}
+
+bool Rasterizer::OcclusionQueryDump(u64* results, s32 num_pairs) {
+    if (results == nullptr || num_pairs <= 0) {
+        return false;
+    }
+
+    // Emergency escape hatch only. Real queries are the default for the nuclear NHL path.
+    static const bool disabled = std::getenv("SHADPS4_NHL22_DISABLE_REAL_OCCLUSION") != nullptr;
+    if (disabled) {
+        return false;
+    }
+
+    if (occlusion_aborted) {
+        occlusion_aborted = false;
+        return false;
+    }
+
+    if (!occlusion_pool) {
+        const vk::QueryPoolCreateInfo info{
+            .queryType = vk::QueryType::eOcclusion,
+            .queryCount = NumOcclusionSlots,
+        };
+        auto [result, pool] = instance.GetDevice().createQueryPoolUnique(info);
+        if (result != vk::Result::eSuccess) {
+            LOG_WARNING(Render_Vulkan, "Take9: failed to create occlusion query pool: {}",
+                        vk::to_string(result));
+            return false;
+        }
+        occlusion_pool = std::move(pool);
+        LOG_INFO(Render_Vulkan, "Take9: real Vulkan occlusion queries enabled");
+    }
+
+    scheduler.EndRendering();
+    const auto cmdbuf = scheduler.CommandBuffer();
+
+    if (!occlusion_active) {
+        cmdbuf.resetQueryPool(*occlusion_pool, occlusion_slot, 1);
+        cmdbuf.beginQuery(*occlusion_pool, occlusion_slot, vk::QueryControlFlags{});
+        occlusion_active = true;
+        occlusion_cmdbuf = cmdbuf;
+        for (s32 i = 0; i < num_pairs; ++i) {
+            results[i * 2] = OcclusionValidMask;
+        }
+        return true;
+    }
+
+    if (cmdbuf != occlusion_cmdbuf) {
+        // The scheduler flushed between the opening and closing dump. Falling back is safer than
+        // ending a query in a different command buffer.
+        occlusion_active = false;
+        occlusion_aborted = true;
+        return false;
+    }
+
+    cmdbuf.endQuery(*occlusion_pool, occlusion_slot);
+    occlusion_active = false;
+
+    const VAddr subject = reinterpret_cast<VAddr>(results);
+    u64 count = 0;
+    if (const auto known = occlusion_history.find(subject); known != occlusion_history.end()) {
+        count = known->second;
+    }
+
+    // Read the previous completed query without waiting. This keeps the guest moving and gives
+    // each stable destination address its own one-frame-late visibility history.
+    if (occlusion_prev_valid) {
+        u64 previous = 0;
+        const auto result = instance.GetDevice().getQueryPoolResults(
+            *occlusion_pool, occlusion_prev_slot, 1, sizeof(previous), &previous, sizeof(previous),
+            vk::QueryResultFlagBits::e64);
+        if (result == vk::Result::eSuccess) {
+            occlusion_history[occlusion_prev_subject] = previous;
+            if (occlusion_prev_subject == subject) {
+                count = previous;
+            }
+        }
+    }
+
+    for (s32 i = 0; i < num_pairs; ++i) {
+        results[i * 2] = count | OcclusionValidMask;
+    }
+
+    occlusion_prev_slot = occlusion_slot;
+    occlusion_prev_subject = subject;
+    occlusion_prev_valid = true;
+    occlusion_slot = (occlusion_slot + 1) % NumOcclusionSlots;
+
+    static u64 completed = 0;
+    if (++completed == 1 || completed % 600 == 0) {
+        LOG_INFO(Render_Vulkan, "Take9 occlusion: completed={}, subject={:#x}, samples={}",
+                 completed, static_cast<u64>(subject), count);
+    }
+    return true;
+}
 
 bool Rasterizer::FilterDraw() {
     const auto& regs = liverpool->regs;

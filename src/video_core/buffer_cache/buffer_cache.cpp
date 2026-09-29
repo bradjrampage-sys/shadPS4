@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>
+#include <atomic>
+#include <bit>
 #include <magic_enum/magic_enum.hpp>
 #include "common/alignment.h"
 #include "common/debug.h"
@@ -16,6 +18,14 @@
 #include "video_core/texture_cache/texture_cache.h"
 
 namespace VideoCore {
+
+namespace {
+std::atomic<u64> g_unhandled_meta_buffer_reads{0};
+
+bool ShouldLogUnhandledMetaRead(const u64 count) {
+    return count == 1 || (count >= 8 && std::has_single_bit(count));
+}
+} // namespace
 
 static constexpr size_t DataShareBufferSize = 64_KB;
 static constexpr size_t StagingBufferSize = 512_MB;
@@ -760,7 +770,12 @@ bool BufferCache::SynchronizeBufferFromImage(Buffer& buffer, VAddr device_addr, 
             buffer.Fill(buffer.Offset(device_addr), size, ZmaskUncompressed);
             return true;
         } else {
-            LOG_WARNING(Render_Vulkan, "Unhandled metadata type {}", magic_enum::enum_name(*type));
+            const u64 count =
+                g_unhandled_meta_buffer_reads.fetch_add(1, std::memory_order_relaxed) + 1;
+            if (ShouldLogUnhandledMetaRead(count)) {
+                LOG_WARNING(Render_Vulkan, "Unhandled metadata type {}, count={}",
+                            magic_enum::enum_name(*type), count);
+            }
         }
     }
     const ImageId image_id = texture_cache.FindImageFromRange(device_addr, size);

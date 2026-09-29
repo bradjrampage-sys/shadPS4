@@ -777,13 +777,28 @@ bool BufferCache::SynchronizeBufferFromImage(Buffer& buffer, VAddr device_addr, 
             static constexpr u32 ZmaskUncompressed = 0xf;
             buffer.Fill(buffer.Offset(device_addr), size, ZmaskUncompressed);
             return true;
-        } else {
+        }
+        if (*type == TextureCache::MetaType::CMask) {
+            // Frostbite fallback: expose CMASK as fully expanded/uncompressed.
+            // On GCN, the non-MSAA COLOR_EXPANDED CMASK code is 0xF per nibble,
+            // i.e. an all-ones dword. This is preferable to treating metadata as
+            // an ordinary image and repeatedly failing the alias/readback path.
+            static constexpr u32 CmaskColorExpanded = 0xffffffffu;
+            buffer.Fill(buffer.Offset(device_addr), size, CmaskColorExpanded);
             const u64 count =
                 g_unhandled_meta_buffer_reads.fetch_add(1, std::memory_order_relaxed) + 1;
             if (ShouldLogUnhandledMetaRead(count)) {
-                LOG_WARNING(Render_Vulkan, "Unhandled metadata type {}, count={}",
-                            magic_enum::enum_name(*type), count);
+                LOG_WARNING(Render_Vulkan,
+                            "Frostbite CMASK buffer fallback: expanded/uncompressed, count={}",
+                            count);
             }
+            return true;
+        }
+        const u64 count =
+            g_unhandled_meta_buffer_reads.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (ShouldLogUnhandledMetaRead(count)) {
+            LOG_WARNING(Render_Vulkan, "Unhandled metadata type {}, count={}",
+                        magic_enum::enum_name(*type), count);
         }
     }
     const ImageId image_id = texture_cache.FindImageFromRange(device_addr, size);

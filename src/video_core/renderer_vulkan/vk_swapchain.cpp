@@ -77,6 +77,41 @@ void Swapchain::Create(u32 width_, u32 height_) {
 
     SetupImages();
     RefreshSemaphores();
+
+    // HDR10 PQ needs mastering metadata as well as the Rec.2020/ST2084 colorspace. Without it,
+    // Windows/NVIDIA/display tone mapping can make the guest image look crushed/dim while host
+    // overlays look wildly over-saturated. Keep HDR native and publish sane HDR10 mastering data.
+    if (needs_hdr && instance.IsHdrMetadataSupported()) {
+        auto set_hdr_metadata = reinterpret_cast<PFN_vkSetHdrMetadataEXT>(
+            vkGetDeviceProcAddr(static_cast<VkDevice>(instance.GetDevice()), "vkSetHdrMetadataEXT"));
+        if (set_hdr_metadata != nullptr) {
+            const VkXYColorEXT display_primary_red{0.708f, 0.292f};
+            const VkXYColorEXT display_primary_green{0.170f, 0.797f};
+            const VkXYColorEXT display_primary_blue{0.131f, 0.046f};
+            const VkXYColorEXT white_point{0.3127f, 0.3290f};
+            const VkHdrMetadataEXT metadata{
+                VK_STRUCTURE_TYPE_HDR_METADATA_EXT,
+                nullptr,
+                display_primary_red,
+                display_primary_green,
+                display_primary_blue,
+                white_point,
+                1000.0f,
+                0.005f,
+                1000.0f,
+                400.0f,
+            };
+            const VkSwapchainKHR raw_swapchain = static_cast<VkSwapchainKHR>(swapchain);
+            set_hdr_metadata(static_cast<VkDevice>(instance.GetDevice()), 1, &raw_swapchain,
+                             &metadata);
+            LOG_INFO(Render_Vulkan,
+                     "Take9 HDR10 metadata: Rec.2020/PQ, mastering 0.005-1000 nits, "
+                     "MaxCLL=1000 MaxFALL=400");
+        } else {
+            LOG_WARNING(Render_Vulkan,
+                        "Take9 HDR metadata extension enabled but vkSetHdrMetadataEXT unavailable");
+        }
+    }
 }
 
 void Swapchain::Recreate(u32 width_, u32 height_) {

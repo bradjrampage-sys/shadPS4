@@ -181,8 +181,8 @@ s32 PS4_SYSV_ABI sceVideoOutSubmitFlip(s32 handle, s32 bufferIndex, s32 flipMode
     static std::atomic<u64> submitted_flips{0};
     const u64 flip_count = submitted_flips.fetch_add(1, std::memory_order_relaxed) + 1;
     if (flip_count == 1 || flip_count % 60 == 0) {
-        LOG_INFO(Lib_VideoOut, "Take8 flip submit: {} flips, buffer = {}, mode = {}",
-                 flip_count, bufferIndex, flipMode);
+        LOG_INFO(Lib_VideoOut, "Take8 flip submit: {} flips, buffer = {}, mode = {}", flip_count,
+                 bufferIndex, flipMode);
     }
 
     LOG_DEBUG(Lib_VideoOut, "bufferIndex = {}, flipMode = {}, flipArg = {}", bufferIndex, flipMode,
